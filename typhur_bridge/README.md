@@ -1,6 +1,6 @@
 # Typhur Bridge
 
-Home Assistant add-on that connects your **Typhur Sync Quad** thermometer directly to Home Assistant using MQTT auto-discovery. No phone required after initial setup.
+Home Assistant add-on that connects your **Typhur Sync Quad** thermometer directly to Home Assistant using MQTT auto-discovery. No phone or extra tools required — just your Typhur account credentials.
 
 ## How it works
 
