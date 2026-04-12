@@ -17,7 +17,7 @@ import requests
 import paho.mqtt.client as mqtt
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 log = logging.getLogger("typhur_bridge")
