@@ -151,7 +151,7 @@ def publish_discovery(ha_client, device):
                 "unit": "°C",
                 "device_class": "temperature",
                 "state_class": "measurement",
-                "value_template": f"{{{{ ({base}.curTemperature | float) / 10 }}}}",
+                "value_template": f"{{{{ (({base}.curTemperature | float) / 10 - 32) * 5 / 9 | round(1) }}}}",
             },
             {
                 "uid": f"typhur_{device_id}_{color}_ambient",
@@ -159,7 +159,7 @@ def publish_discovery(ha_client, device):
                 "unit": "°C",
                 "device_class": "temperature",
                 "state_class": "measurement",
-                "value_template": f"{{{{ ({base}.curAmbientTemperature | float) / 10 }}}}",
+                "value_template": f"{{{{ (({base}.curAmbientTemperature | float) / 10 - 32) * 5 / 9 | round(1) }}}}",
             },
             {
                 "uid": f"typhur_{device_id}_{color}_battery",
