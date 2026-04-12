@@ -64,24 +64,35 @@ def sign_request(token, body_str="{}"):
     return h
 
 
-def refresh_token(email, password, old_token):
-    """Forny token ved å sende innlogging med den utløpte tokenen som x-token."""
+def login(email, password):
+    """
+    Logg inn med e-post og MD5-passord.
+    Endepunkt: /app/account/login
+    x-token må vere strengen 'none' ved innlogging.
+    """
     md5_pw = hashlib.md5(password.encode()).hexdigest()
-    for pw_val in [md5_pw, password]:
-        body = json.dumps({"account": email, "password": pw_val}, separators=(",", ":"))
-        hdrs = sign_request(old_token, body)
-        log.debug(f"TOKEN REFRESH body: {body}")
-        resp = requests.post(f"{TYPHUR_API}/app/user/login", headers=hdrs, data=body, timeout=15)
-        log.debug(f"TOKEN REFRESH RESPONSE {resp.status_code}: {resp.text}")
-        data = resp.json()
-        if data.get("code") == "0":
-            new_token = data["data"]["token"]
-            log.info("Token fornyet!")
-            with open(TOKEN_FILE, "w") as f:
-                f.write(new_token)
-            os.chmod(TOKEN_FILE, 0o600)
-            return new_token
-    return None
+    body = json.dumps(
+        {"accountName": email, "accountPassword": md5_pw, "deviceInfo": "HomeAssistant"},
+        separators=(",", ":")
+    )
+    hdrs = sign_request("none", body)
+    log.info(f"Logger inn som {email}...")
+    resp = requests.post(f"{TYPHUR_API}/app/account/login", headers=hdrs, data=body, timeout=15)
+    log.debug(f"LOGIN RESPONSE {resp.status_code}: {resp.text}")
+    data = resp.json()
+    if data.get("code") == "0":
+        token = data["data"]["token"]
+        log.info("Innlogging vellykket!")
+        with open(TOKEN_FILE, "w") as f:
+            f.write(token)
+        os.chmod(TOKEN_FILE, 0o600)
+        return token
+    raise Exception(f"Innlogging feilet: {data.get('msg')} (kode: {data.get('code')})")
+
+
+def refresh_token(email, password, old_token):
+    """Forny utløpt token — same endepunkt som vanleg login."""
+    return login(email, password)
 
 
 def resolve_token(options):
@@ -107,9 +118,12 @@ def resolve_token(options):
         token = verify_or_refresh_token(token, email, password)
         return token
 
+    # Ingen token — logg inn med e-post/passord
+    if email and password:
+        return login(email, password)
+
     raise Exception(
-        "Ingen token funnet! Fyll inn 'typhur_token' i konfigurasjonen.\n"
-        "Hent token: åpne Typhur-appen med mitmproxy og kopier x-token fra /app/device/bind/list-kallet."
+        "Ingen token funnet! Fyll inn 'typhur_email' + 'typhur_password', eller 'typhur_token' direkte."
     )
 
 
