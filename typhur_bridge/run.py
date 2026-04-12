@@ -64,71 +64,86 @@ def sign_request(token, body_str="{}"):
     return h
 
 
-def _try_login(email, password_value, token_candidate):
-    """Prøv innlogging med gitt passordverdi og token-kandidat."""
-    body = json.dumps({"account": email, "password": password_value}, separators=(",", ":"))
-    hdrs = sign_request(token_candidate, body)
-    log.debug(f"LOGIN attempt token_candidate={repr(token_candidate)[:8]}... headers={hdrs}")
-    log.debug(f"LOGIN body: {body}")
-    resp = requests.post(f"{TYPHUR_API}/app/user/login", headers=hdrs, data=body, timeout=15)
-    log.debug(f"LOGIN RESPONSE {resp.status_code}: {resp.text}")
-    data = resp.json()
-    if data.get("code") == "0":
-        return data["data"]["token"]
+def refresh_token(email, password, old_token):
+    """Forny token ved å sende innlogging med den utløpte tokenen som x-token."""
+    md5_pw = hashlib.md5(password.encode()).hexdigest()
+    for pw_val in [md5_pw, password]:
+        body = json.dumps({"account": email, "password": pw_val}, separators=(",", ":"))
+        hdrs = sign_request(old_token, body)
+        log.debug(f"TOKEN REFRESH body: {body}")
+        resp = requests.post(f"{TYPHUR_API}/app/user/login", headers=hdrs, data=body, timeout=15)
+        log.debug(f"TOKEN REFRESH RESPONSE {resp.status_code}: {resp.text}")
+        data = resp.json()
+        if data.get("code") == "0":
+            new_token = data["data"]["token"]
+            log.info("Token fornyet!")
+            with open(TOKEN_FILE, "w") as f:
+                f.write(new_token)
+            os.chmod(TOKEN_FILE, 0o600)
+            return new_token
     return None
 
 
-def login(email, password):
-    """Logg inn med e-post og passord, returner token."""
-    md5_pw = hashlib.md5(password.encode()).hexdigest()
-
-    # Prøv ulike kombinasjoner av passord og initial-token
-    attempts = [
-        (md5_pw, APP_KEY),       # MD5 passord + APP_KEY som token
-        (password,  APP_KEY),    # Klartekst passord + APP_KEY som token
-        (md5_pw,    APP_ID),     # MD5 passord + APP_ID som token
-        (password,  APP_ID),     # Klartekst passord + APP_ID som token
-    ]
-
-    for pw_val, tok in attempts:
-        log.info(f"Prøver innlogging (pw={'md5' if pw_val == md5_pw else 'plain'}, token_prefix={tok[:8]}...)...")
-        result = _try_login(email, pw_val, tok)
-        if result:
-            log.info("Innlogging vellykket!")
-            with open(TOKEN_FILE, "w") as f:
-                f.write(result)
-            os.chmod(TOKEN_FILE, 0o600)
-            return result
-
-    raise Exception("Innlogging feilet — kunne ikke logge inn med noen kombinasjon. Bruk typhur_token direkte i stedet.")
-
-
 def resolve_token(options):
-    """Hent token fra config, cachet fil, eller logg inn med e-post/passord."""
-    # 1. Eksplisitt token i config
-    token = (options.get("typhur_token") or "").strip()
-    if token:
-        log.info("Bruker token fra konfigurasjon.")
-        return token
-
-    # 2. Cachet token fra forrige innlogging
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE) as f:
-            cached = f.read().strip()
-        if cached:
-            log.info("Bruker cachet token fra /data/typhur_token.txt")
-            return cached
-
-    # 3. Logg inn med e-post og passord
+    """
+    Hent token fra config eller cachet fil.
+    Hvis token er utløpt og e-post/passord er tilgjengelig, forny automatisk.
+    """
     email = (options.get("typhur_email") or "").strip()
     password = (options.get("typhur_password") or "").strip()
-    if email and password:
-        log.info(f"Logger inn som {email}...")
-        return login(email, password)
+
+    # 1. Eksplisitt token i config
+    token = (options.get("typhur_token") or "").strip()
+
+    # 2. Cachet token fra forrige innlogging (overstyres av config-token)
+    if not token and os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE) as f:
+            token = f.read().strip()
+        if token:
+            log.info("Bruker cachet token fra /data/typhur_token.txt")
+
+    if token:
+        # Verifiser at tokenen fungerer; forny ved utløp
+        token = verify_or_refresh_token(token, email, password)
+        return token
 
     raise Exception(
-        "Ingen token funnet! Fyll inn enten 'typhur_token' eller 'typhur_email' + 'typhur_password' i konfigurasjonen."
+        "Ingen token funnet! Fyll inn 'typhur_token' i konfigurasjonen.\n"
+        "Hent token: åpne Typhur-appen med mitmproxy og kopier x-token fra /app/device/bind/list-kallet."
     )
+
+
+def verify_or_refresh_token(token, email, password):
+    """Sjekk om token virker; forny automatisk hvis utløpt og e-post/passord er tilgjengelig."""
+    resp = requests.post(
+        f"{TYPHUR_API}/app/device/bind/list",
+        headers=sign_request(token, "{}"),
+        data="{}",
+        timeout=10
+    )
+    data = resp.json()
+    code = data.get("code")
+
+    if code == "0":
+        log.info("Token er gyldig.")
+        return token
+
+    if code == "52":  # Token utløpt
+        log.warning("Token er utløpt.")
+        if email and password:
+            log.info(f"Fornyer token automatisk for {email}...")
+            new_token = refresh_token(email, password, token)
+            if new_token:
+                return new_token
+            raise Exception("Automatisk tokenfornyelse feilet. Oppdater typhur_token manuelt.")
+        raise Exception(
+            "Token er utløpt! Legg til 'typhur_email' og 'typhur_password' for automatisk fornyelse, "
+            "eller hent ny token manuelt og oppdater typhur_token."
+        )
+
+    # Annen feil — bruk token og la oppkoblingen avgjøre
+    log.warning(f"Token-verifisering returnerte kode {code}: {data.get('msg')} — bruker token likevel")
+    return token
 
 
 def fetch_and_save_certs(token):
@@ -376,21 +391,12 @@ class TyphurBridge:
             else:
                 client_id = fetch_and_save_certs(self.token)
 
-        # Hent enheter (med automatisk token-refresh ved auth-feil)
+        # Hent enheter
         log.info("Henter enhetsliste...")
         self.devices = get_devices(self.token)
         if not self.devices:
-            email = (self.options.get("typhur_email") or "").strip()
-            password = (self.options.get("typhur_password") or "").strip()
-            if email and password:
-                log.warning("Ingen enheter funnet — token kan ha utløpt. Prøver ny innlogging...")
-                if os.path.exists(TOKEN_FILE):
-                    os.unlink(TOKEN_FILE)
-                self.token = login(email, password)
-                self.devices = get_devices(self.token)
-            if not self.devices:
-                log.error("Ingen enheter funnet! Sjekk brukernavn/passord eller typhur_token.")
-                raise SystemExit(1)
+            log.error("Ingen enheter funnet! Sjekk typhur_token eller e-post/passord.")
+            raise SystemExit(1)
         log.info(f"Fant {len(self.devices)} enhet(er)")
 
         self.setup_ha_mqtt()

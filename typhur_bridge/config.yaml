@@ -1,6 +1,6 @@
 name: "Typhur Bridge"
 description: "Kobler Typhur Sync Quad termometer til Home Assistant via MQTT auto-discovery"
-version: "1.0.9"
+version: "1.1.0"
 slug: "typhur_bridge"
 init: false
 arch:
