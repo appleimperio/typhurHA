@@ -1,0 +1,6 @@
+version: 2
+ignore-paths:
+  - .gitguardian.yml
+ignore-matches:
+  - name: "Typhur APK signing constant (not a secret)"
+    match: "7d02d81bd7f4483a9a0ac580f2b6ad44"

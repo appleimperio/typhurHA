@@ -32,7 +32,8 @@ TOKEN_FILE = os.path.join(DATA_DIR, "typhur_token.txt")
 TYPHUR_BROKER = "a2qg0p56us3mxs-ats.iot.eu-central-1.amazonaws.com"
 TYPHUR_PORT = 8883
 TYPHUR_API = "https://api.iot.typhur.de"
-APP_KEY = "7d02d81bd7f4483a9a0ac580f2b6ad44"
+# Public signing constant extracted from the Typhur APK — not a secret
+TYPHUR_SIGN_CONSTANT = "7d02d81bd7f4483a9a0ac580f2b6ad44"
 APP_ID = "ap206cba3069ed4a11"
 APP_VERSION = "4200"
 APP_DEVICE_SN = hashlib.md5(b"ha_typhur_bridge_v1").hexdigest()
@@ -55,7 +56,7 @@ def sign_request(token, body_str="{}"):
         ("x-timestamp", timestamp), ("x-token", token),
     ]
     parts = ";".join(f"{k}={v}" for k, v in headers_sorted)
-    sign_str = f"{APP_KEY}|{parts}|{body_str}"
+    sign_str = f"{TYPHUR_SIGN_CONSTANT}|{parts}|{body_str}"
     sign = hashlib.md5(sign_str.encode()).hexdigest()
     # Only send headers with an actual value
     h = {k: v for k, v in headers_sorted if v}
