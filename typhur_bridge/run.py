@@ -47,19 +47,18 @@ def load_options():
 def sign_request(token, body_str="{}"):
     nonce = uuid.uuid4().hex
     timestamp = str(int(time.time() * 1000))
+    # x-token er alltid med i signaturstrengen (selv som tom streng)
     headers_sorted = [
         ("x-appId", APP_ID), ("x-appVersion", APP_VERSION),
         ("x-deviceSn", APP_DEVICE_SN), ("x-lang", "en_US"),
         ("x-nonce", nonce), ("x-region", "NO"),
-        ("x-timestamp", timestamp),
+        ("x-timestamp", timestamp), ("x-token", token),
     ]
-    # x-token inkluderes kun når den faktisk finnes
-    if token:
-        headers_sorted.append(("x-token", token))
     parts = ";".join(f"{k}={v}" for k, v in headers_sorted)
     sign_str = f"{APP_KEY}|{parts}|{body_str}"
     sign = hashlib.md5(sign_str.encode()).hexdigest()
-    h = {k: v for k, v in headers_sorted}
+    # Send kun headers med faktisk verdi (ikke tom x-token)
+    h = {k: v for k, v in headers_sorted if v}
     h["x-sign"] = sign
     h["Content-Type"] = "application/json"
     return h
