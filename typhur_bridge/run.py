@@ -68,7 +68,7 @@ def _try_login(email, password_value, token_candidate):
     """Prøv innlogging med gitt passordverdi og token-kandidat."""
     body = json.dumps({"account": email, "password": password_value}, separators=(",", ":"))
     hdrs = sign_request(token_candidate, body)
-    log.debug(f"LOGIN attempt token_candidate={token_candidate!r[:8]}... headers={hdrs}")
+    log.debug(f"LOGIN attempt token_candidate={repr(token_candidate)[:8]}... headers={hdrs}")
     log.debug(f"LOGIN body: {body}")
     resp = requests.post(f"{TYPHUR_API}/app/user/login", headers=hdrs, data=body, timeout=15)
     log.debug(f"LOGIN RESPONSE {resp.status_code}: {resp.text}")
