@@ -22,7 +22,7 @@ schema:
   typhur_email: str?
   typhur_password: str?
   typhur_token: str?
-  typhur_region: "eu|us"
+  typhur_region: str
   mqtt_host: str
   mqtt_port: int
   mqtt_username: str?
