@@ -17,7 +17,7 @@ import requests
 import paho.mqtt.client as mqtt
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 log = logging.getLogger("typhur_bridge")
@@ -67,12 +67,16 @@ def sign_request(token, body_str="{}"):
 def login(email, password):
     """Logg inn med e-post og passord, returner token. Prøver MD5-hashet passord først."""
     body = json.dumps({"account": email, "password": hashlib.md5(password.encode()).hexdigest()}, separators=(",", ":"))
+    hdrs = sign_request("", body)
+    log.debug(f"LOGIN REQUEST headers: {hdrs}")
+    log.debug(f"LOGIN REQUEST body: {body}")
     resp = requests.post(
         f"{TYPHUR_API}/app/user/login",
-        headers=sign_request("", body),
+        headers=hdrs,
         data=body,
         timeout=15
     )
+    log.debug(f"LOGIN RESPONSE {resp.status_code}: {resp.text}")
     data = resp.json()
     if data.get("code") == "0":
         token = data["data"]["token"]
@@ -85,12 +89,16 @@ def login(email, password):
     # Fallback: prøv med klartekst passord
     log.warning(f"MD5-innlogging feilet ({data.get('msg')}), prøver klartekst...")
     body2 = json.dumps({"account": email, "password": password}, separators=(",", ":"))
+    hdrs2 = sign_request("", body2)
+    log.debug(f"LOGIN RETRY headers: {hdrs2}")
+    log.debug(f"LOGIN RETRY body: {body2}")
     resp2 = requests.post(
         f"{TYPHUR_API}/app/user/login",
-        headers=sign_request("", body2),
+        headers=hdrs2,
         data=body2,
         timeout=15
     )
+    log.debug(f"LOGIN RETRY RESPONSE {resp2.status_code}: {resp2.text}")
     data2 = resp2.json()
     if data2.get("code") == "0":
         token = data2["data"]["token"]
