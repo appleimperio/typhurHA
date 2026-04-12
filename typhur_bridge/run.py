@@ -34,7 +34,7 @@ TYPHUR_API = "https://api.iot.typhur.de"
 APP_KEY = "7d02d81bd7f4483a9a0ac580f2b6ad44"
 APP_ID = "ap206cba3069ed4a11"
 APP_VERSION = "4200"
-APP_DEVICE_SN = "ha_typhur_bridge_001"
+APP_DEVICE_SN = hashlib.md5(b"ha_typhur_bridge_v1").hexdigest()  # 32-char hex
 HA_DISCOVERY_PREFIX = "homeassistant"
 
 
