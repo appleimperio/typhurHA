@@ -64,51 +64,43 @@ def sign_request(token, body_str="{}"):
     return h
 
 
-def login(email, password):
-    """Logg inn med e-post og passord, returner token. Prøver MD5-hashet passord først."""
-    body = json.dumps({"account": email, "password": hashlib.md5(password.encode()).hexdigest()}, separators=(",", ":"))
-    hdrs = sign_request("", body)
-    log.debug(f"LOGIN REQUEST headers: {hdrs}")
-    log.debug(f"LOGIN REQUEST body: {body}")
-    resp = requests.post(
-        f"{TYPHUR_API}/app/user/login",
-        headers=hdrs,
-        data=body,
-        timeout=15
-    )
+def _try_login(email, password_value, token_candidate):
+    """Prøv innlogging med gitt passordverdi og token-kandidat."""
+    body = json.dumps({"account": email, "password": password_value}, separators=(",", ":"))
+    hdrs = sign_request(token_candidate, body)
+    log.debug(f"LOGIN attempt token_candidate={token_candidate!r[:8]}... headers={hdrs}")
+    log.debug(f"LOGIN body: {body}")
+    resp = requests.post(f"{TYPHUR_API}/app/user/login", headers=hdrs, data=body, timeout=15)
     log.debug(f"LOGIN RESPONSE {resp.status_code}: {resp.text}")
     data = resp.json()
     if data.get("code") == "0":
-        token = data["data"]["token"]
-        log.info("Innlogging vellykket, token hentet.")
-        with open(TOKEN_FILE, "w") as f:
-            f.write(token)
-        os.chmod(TOKEN_FILE, 0o600)
-        return token
+        return data["data"]["token"]
+    return None
 
-    # Fallback: prøv med klartekst passord
-    log.warning(f"MD5-innlogging feilet ({data.get('msg')}), prøver klartekst...")
-    body2 = json.dumps({"account": email, "password": password}, separators=(",", ":"))
-    hdrs2 = sign_request("", body2)
-    log.debug(f"LOGIN RETRY headers: {hdrs2}")
-    log.debug(f"LOGIN RETRY body: {body2}")
-    resp2 = requests.post(
-        f"{TYPHUR_API}/app/user/login",
-        headers=hdrs2,
-        data=body2,
-        timeout=15
-    )
-    log.debug(f"LOGIN RETRY RESPONSE {resp2.status_code}: {resp2.text}")
-    data2 = resp2.json()
-    if data2.get("code") == "0":
-        token = data2["data"]["token"]
-        log.info("Innlogging vellykket (klartekst), token hentet.")
-        with open(TOKEN_FILE, "w") as f:
-            f.write(token)
-        os.chmod(TOKEN_FILE, 0o600)
-        return token
 
-    raise Exception(f"Innlogging feilet: {data2.get('msg')} (kode: {data2.get('code')})")
+def login(email, password):
+    """Logg inn med e-post og passord, returner token."""
+    md5_pw = hashlib.md5(password.encode()).hexdigest()
+
+    # Prøv ulike kombinasjoner av passord og initial-token
+    attempts = [
+        (md5_pw, APP_KEY),       # MD5 passord + APP_KEY som token
+        (password,  APP_KEY),    # Klartekst passord + APP_KEY som token
+        (md5_pw,    APP_ID),     # MD5 passord + APP_ID som token
+        (password,  APP_ID),     # Klartekst passord + APP_ID som token
+    ]
+
+    for pw_val, tok in attempts:
+        log.info(f"Prøver innlogging (pw={'md5' if pw_val == md5_pw else 'plain'}, token_prefix={tok[:8]}...)...")
+        result = _try_login(email, pw_val, tok)
+        if result:
+            log.info("Innlogging vellykket!")
+            with open(TOKEN_FILE, "w") as f:
+                f.write(result)
+            os.chmod(TOKEN_FILE, 0o600)
+            return result
+
+    raise Exception("Innlogging feilet — kunne ikke logge inn med noen kombinasjon. Bruk typhur_token direkte i stedet.")
 
 
 def resolve_token(options):
