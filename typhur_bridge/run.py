@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Typhur Bridge - Home Assistant Add-on
-Kobler Typhur Sync Quad til HA via MQTT med auto-discovery.
-Henter MQTT-sertifikater automatisk fra Typhur API.
+Connects Typhur Sync Quad thermometer to Home Assistant via MQTT auto-discovery.
+Fetches MQTT certificates automatically from the Typhur API.
 """
 import json
 import ssl
@@ -35,7 +35,7 @@ TYPHUR_API = "https://api.iot.typhur.de"
 APP_KEY = "7d02d81bd7f4483a9a0ac580f2b6ad44"
 APP_ID = "ap206cba3069ed4a11"
 APP_VERSION = "4200"
-APP_DEVICE_SN = hashlib.md5(b"ha_typhur_bridge_v1").hexdigest()  # 32-char hex
+APP_DEVICE_SN = hashlib.md5(b"ha_typhur_bridge_v1").hexdigest()
 HA_DISCOVERY_PREFIX = "homeassistant"
 
 
@@ -47,7 +47,7 @@ def load_options():
 def sign_request(token, body_str="{}"):
     nonce = uuid.uuid4().hex
     timestamp = str(int(time.time() * 1000))
-    # x-token er alltid med i signaturstrengen (selv som tom streng)
+    # x-token is always included in the signature string (even as empty/none)
     headers_sorted = [
         ("x-appId", APP_ID), ("x-appVersion", APP_VERSION),
         ("x-deviceSn", APP_DEVICE_SN), ("x-lang", "en_US"),
@@ -57,7 +57,7 @@ def sign_request(token, body_str="{}"):
     parts = ";".join(f"{k}={v}" for k, v in headers_sorted)
     sign_str = f"{APP_KEY}|{parts}|{body_str}"
     sign = hashlib.md5(sign_str.encode()).hexdigest()
-    # Send kun headers med faktisk verdi (ikke tom x-token)
+    # Only send headers with an actual value
     h = {k: v for k, v in headers_sorted if v}
     h["x-sign"] = sign
     h["Content-Type"] = "application/json"
@@ -66,9 +66,9 @@ def sign_request(token, body_str="{}"):
 
 def login(email, password):
     """
-    Logg inn med e-post og MD5-passord.
-    Endepunkt: /app/account/login
-    x-token må vere strengen 'none' ved innlogging.
+    Log in with email and MD5-hashed password.
+    Endpoint: /app/account/login
+    x-token must be the literal string 'none' for unauthenticated requests.
     """
     md5_pw = hashlib.md5(password.encode()).hexdigest()
     body = json.dumps(
@@ -76,59 +76,58 @@ def login(email, password):
         separators=(",", ":")
     )
     hdrs = sign_request("none", body)
-    log.info(f"Logger inn som {email}...")
+    log.info(f"Logging in as {email}...")
     resp = requests.post(f"{TYPHUR_API}/app/account/login", headers=hdrs, data=body, timeout=15)
-    log.debug(f"LOGIN RESPONSE {resp.status_code}: {resp.text}")
+    log.debug(f"Login response {resp.status_code}: {resp.text}")
     data = resp.json()
     if data.get("code") == "0":
         token = data["data"]["token"]
-        log.info("Innlogging vellykket!")
+        log.info("Login successful.")
         with open(TOKEN_FILE, "w") as f:
             f.write(token)
         os.chmod(TOKEN_FILE, 0o600)
         return token
-    raise Exception(f"Innlogging feilet: {data.get('msg')} (kode: {data.get('code')})")
+    raise Exception(f"Login failed: {data.get('msg')} (code: {data.get('code')})")
 
 
 def refresh_token(email, password, old_token):
-    """Forny utløpt token — same endepunkt som vanleg login."""
+    """Refresh an expired token — same endpoint as regular login."""
     return login(email, password)
 
 
 def resolve_token(options):
     """
-    Hent token fra config eller cachet fil.
-    Hvis token er utløpt og e-post/passord er tilgjengelig, forny automatisk.
+    Resolve the API token from config, cached file, or by logging in with email/password.
+    Priority:
+      1. Explicit token in config
+      2. Cached token from previous login
+      3. Login with email + password
     """
     email = (options.get("typhur_email") or "").strip()
     password = (options.get("typhur_password") or "").strip()
 
-    # 1. Eksplisitt token i config
     token = (options.get("typhur_token") or "").strip()
 
-    # 2. Cachet token fra forrige innlogging (overstyres av config-token)
     if not token and os.path.exists(TOKEN_FILE):
         with open(TOKEN_FILE) as f:
             token = f.read().strip()
         if token:
-            log.info("Bruker cachet token fra /data/typhur_token.txt")
+            log.info("Using cached token from /data/typhur_token.txt")
 
     if token:
-        # Verifiser at tokenen fungerer; forny ved utløp
         token = verify_or_refresh_token(token, email, password)
         return token
 
-    # Ingen token — logg inn med e-post/passord
     if email and password:
         return login(email, password)
 
     raise Exception(
-        "Ingen token funnet! Fyll inn 'typhur_email' + 'typhur_password', eller 'typhur_token' direkte."
+        "No token found. Set 'typhur_email' + 'typhur_password', or provide 'typhur_token' directly."
     )
 
 
 def verify_or_refresh_token(token, email, password):
-    """Sjekk om token virker; forny automatisk hvis utløpt og e-post/passord er tilgjengelig."""
+    """Verify token against the API; refresh automatically if expired."""
     resp = requests.post(
         f"{TYPHUR_API}/app/device/bind/list",
         headers=sign_request(token, "{}"),
@@ -139,30 +138,29 @@ def verify_or_refresh_token(token, email, password):
     code = data.get("code")
 
     if code == "0":
-        log.info("Token er gyldig.")
+        log.info("Token is valid.")
         return token
 
-    if code == "52":  # Token utløpt
-        log.warning("Token er utløpt.")
+    if code == "52":  # Token expired
+        log.warning("Token has expired.")
         if email and password:
-            log.info(f"Fornyer token automatisk for {email}...")
+            log.info(f"Refreshing token automatically for {email}...")
             new_token = refresh_token(email, password, token)
             if new_token:
                 return new_token
-            raise Exception("Automatisk tokenfornyelse feilet. Oppdater typhur_token manuelt.")
+            raise Exception("Automatic token refresh failed. Update typhur_token manually.")
         raise Exception(
-            "Token er utløpt! Legg til 'typhur_email' og 'typhur_password' for automatisk fornyelse, "
-            "eller hent ny token manuelt og oppdater typhur_token."
+            "Token has expired. Add 'typhur_email' and 'typhur_password' for automatic renewal, "
+            "or provide a new token via 'typhur_token'."
         )
 
-    # Annen feil — bruk token og la oppkoblingen avgjøre
-    log.warning(f"Token-verifisering returnerte kode {code}: {data.get('msg')} — bruker token likevel")
+    log.warning(f"Token verification returned code {code}: {data.get('msg')} — proceeding anyway")
     return token
 
 
 def fetch_and_save_certs(token):
-    """Hent MQTT-sertifikater fra Typhur API og lagre i /data/"""
-    log.info("Henter MQTT-sertifikater fra Typhur API...")
+    """Fetch MQTT client certificates from the Typhur API and save to /data/."""
+    log.info("Fetching MQTT certificates from Typhur API...")
     resp = requests.post(
         f"{TYPHUR_API}/app/mqtt/cert/apply",
         headers=sign_request(token, "{}"),
@@ -171,7 +169,7 @@ def fetch_and_save_certs(token):
     )
     data = resp.json()
     if data.get("code") != "0":
-        raise Exception(f"Cert apply feilet: {data.get('msg')}")
+        raise Exception(f"Certificate request failed: {data.get('msg')}")
 
     cert_data = data["data"]
     p12_url = cert_data["p12Url"]
@@ -203,7 +201,7 @@ def fetch_and_save_certs(token):
     with open(CLIENT_ID_FILE, "w") as f:
         f.write(client_id)
 
-    log.info(f"Sertifikater lagret. Client ID: {client_id}")
+    log.info(f"Certificates saved. Client ID: {client_id}")
     return client_id
 
 
@@ -246,7 +244,7 @@ def publish_discovery(ha_client, device):
         sensors += [
             {
                 "uid": f"typhur_{device_id}_{color}_temp",
-                "name": f"{device_name} {label} Temperatur",
+                "name": f"{device_name} {label} Temperature",
                 "unit": "°C",
                 "device_class": "temperature",
                 "state_class": "measurement",
@@ -254,7 +252,7 @@ def publish_discovery(ha_client, device):
             },
             {
                 "uid": f"typhur_{device_id}_{color}_ambient",
-                "name": f"{device_name} {label} Omgivelsestemperatur",
+                "name": f"{device_name} {label} Ambient Temperature",
                 "unit": "°C",
                 "device_class": "temperature",
                 "state_class": "measurement",
@@ -262,7 +260,7 @@ def publish_discovery(ha_client, device):
             },
             {
                 "uid": f"typhur_{device_id}_{color}_battery",
-                "name": f"{device_name} {label} Batteri",
+                "name": f"{device_name} {label} Battery",
                 "unit": "%",
                 "device_class": "battery",
                 "state_class": "measurement",
@@ -270,7 +268,7 @@ def publish_discovery(ha_client, device):
             },
             {
                 "uid": f"typhur_{device_id}_{color}_state",
-                "name": f"{device_name} {label} Status",
+                "name": f"{device_name} {label} State",
                 "unit": None,
                 "device_class": None,
                 "state_class": None,
@@ -281,7 +279,7 @@ def publish_discovery(ha_client, device):
     sensors += [
         {
             "uid": f"typhur_{device_id}_battery",
-            "name": f"{device_name} Batteri",
+            "name": f"{device_name} Battery",
             "unit": "%",
             "device_class": "battery",
             "state_class": "measurement",
@@ -318,7 +316,7 @@ def publish_discovery(ha_client, device):
             retain=True
         )
 
-    log.info(f"Discovery publisert for {device_name} ({len(sensors)} sensorer)")
+    log.info(f"Discovery published for {device_name} ({len(sensors)} sensors)")
     return state_topic
 
 
@@ -339,7 +337,7 @@ class TyphurBridge:
             )
         self.ha_client.connect(self.options["mqtt_host"], self.options["mqtt_port"], 60)
         self.ha_client.loop_start()
-        log.info(f"Tilkoblet HA MQTT: {self.options['mqtt_host']}:{self.options['mqtt_port']}")
+        log.info(f"Connected to HA MQTT: {self.options['mqtt_host']}:{self.options['mqtt_port']}")
 
     def setup_typhur_mqtt(self, client_id):
         def on_connect(client, userdata, flags, rc, properties=None):
@@ -349,9 +347,9 @@ class TyphurBridge:
                     device_model = dev.get("deviceModel", "WT08")
                     topic = f"device/{device_model}/{device_id}/pub"
                     client.subscribe(topic)
-                    log.info(f"Abonnerer på: {topic}")
+                    log.info(f"Subscribed to: {topic}")
             else:
-                log.error(f"Typhur MQTT feil rc={rc}")
+                log.error(f"Typhur MQTT connection failed: rc={rc}")
 
         def on_message(client, userdata, msg):
             try:
@@ -366,15 +364,15 @@ class TyphurBridge:
                         self.ha_client.publish(state_topic, msg.payload.decode())
                         break
             except Exception as e:
-                log.error(f"Meldingsfeil: {e}")
+                log.error(f"Message error: {e}")
 
         def on_disconnect(client, userdata, rc, properties=None, reasonCode=None):
-            log.warning(f"Typhur MQTT frakoblet (rc={rc}), reconnect om 15s...")
+            log.warning(f"Typhur MQTT disconnected (rc={rc}), reconnecting in 15s...")
             time.sleep(15)
             try:
                 client.reconnect()
             except Exception as e:
-                log.error(f"Reconnect feilet: {e}")
+                log.error(f"Reconnect failed: {e}")
 
         self.typhur_client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
@@ -389,39 +387,36 @@ class TyphurBridge:
         self.typhur_client.tls_set_context(ssl_ctx)
         self.typhur_client.connect(TYPHUR_BROKER, TYPHUR_PORT, 60)
         self.typhur_client.loop_start()
-        log.info(f"Tilkoblet Typhur cloud MQTT")
+        log.info("Connected to Typhur cloud MQTT")
 
     def run(self):
-        log.info("=== Typhur Bridge starter ===")
+        log.info("=== Typhur Bridge starting ===")
 
-        # Hent eller refresh sertifikater
         if not (os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)):
             client_id = fetch_and_save_certs(self.token)
         else:
-            log.info("Bruker lagrede sertifikater")
+            log.info("Using cached certificates")
             if os.path.exists(CLIENT_ID_FILE):
                 with open(CLIENT_ID_FILE) as f:
                     client_id = f.read().strip()
             else:
                 client_id = fetch_and_save_certs(self.token)
 
-        # Hent enheter
-        log.info("Henter enhetsliste...")
+        log.info("Fetching device list...")
         self.devices = get_devices(self.token)
         if not self.devices:
-            log.error("Ingen enheter funnet! Sjekk typhur_token eller e-post/passord.")
+            log.error("No devices found. Check your credentials or token.")
             raise SystemExit(1)
-        log.info(f"Fant {len(self.devices)} enhet(er)")
+        log.info(f"Found {len(self.devices)} device(s)")
 
         self.setup_ha_mqtt()
         self.setup_typhur_mqtt(client_id)
 
-        # Publiser discovery for alle enheter
         time.sleep(2)
         for dev in self.devices:
             publish_discovery(self.ha_client, dev)
 
-        log.info("Bridge kjører! Temperaturer sendes til Home Assistant.")
+        log.info("Bridge running. Temperature data is being forwarded to Home Assistant.")
 
         while True:
             time.sleep(60)

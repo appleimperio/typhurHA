@@ -1,40 +1,50 @@
 # Typhur Bridge
 
-Home Assistant add-on som kobler Typhur Sync Quad termometer direkte til Home Assistant via MQTT auto-discovery.
+Home Assistant add-on that connects your **Typhur Sync Quad** thermometer directly to Home Assistant using MQTT auto-discovery. No phone required after initial setup.
 
-## Funksjon
+## How it works
 
-Add-onen abonnerer på Typhur sin sky-MQTT (AWS IoT) og videresender temperaturdata til Home Assistant sin lokale MQTT-broker. Alle prober opprettes automatisk som sensorer i HA.
+The add-on authenticates with the Typhur cloud API, subscribes to your device's real-time data stream via AWS IoT MQTT, and forwards temperature readings to your local Home Assistant MQTT broker. All sensors are created automatically via HA discovery.
 
-## Installasjon
+```
+Typhur probe  →  Typhur cloud (AWS IoT)  →  Typhur Bridge  →  Local MQTT  →  Home Assistant
+```
 
-1. Gå til **Innstillinger → Add-ons → Add-on butikk**
-2. Trykk ⋮ → **Egendefinerte repositories**
-3. Legg til: `https://github.com/oleost/typhurHA`
-4. Finn **Typhur Bridge** og installer
+## Installation
 
-## Konfigurasjon
+1. Go to **Settings → Add-ons → Add-on Store**
+2. Click ⋮ → **Repositories**
+3. Add: `https://github.com/oleost/typhurHA`
+4. Find **Typhur Bridge** and click **Install**
 
-| Felt | Beskrivelse |
-|------|-------------|
-| `typhur_token` | Auth-token fra Typhur API (se under) |
-| `mqtt_host` | HA MQTT broker (standard: `core-mosquitto`) |
-| `mqtt_port` | MQTT port (standard: `1883`) |
-| `mqtt_username` | MQTT brukernavn (om påkrevd) |
-| `mqtt_password` | MQTT passord (om påkrevd) |
+## Configuration
 
-## Hente Typhur token
+| Option | Description | Required |
+|--------|-------------|----------|
+| `typhur_email` | Your Typhur account email | Yes (or use token) |
+| `typhur_password` | Your Typhur account password | Yes (or use token) |
+| `typhur_token` | API token (advanced — overrides email/password) | No |
+| `mqtt_host` | HA MQTT broker hostname | Yes (default: `core-mosquitto`) |
+| `mqtt_port` | MQTT port | Yes (default: `1883`) |
+| `mqtt_username` | MQTT username (if required) | No |
+| `mqtt_password` | MQTT password (if required) | No |
 
-Token hentes én gang og lagres. Se prosjektdokumentasjon for fremgangsmåte.
+**Recommended:** Fill in `typhur_email` and `typhur_password`. The add-on will log in automatically, cache the token locally, and renew it when it expires — no manual intervention needed.
 
-## Sensorer som opprettes
+## Sensors created per device
 
-For hver probe opprettes:
-- **Temperatur** (°C)
-- **Omgivelsestemperatur** (°C)
-- **Batteri** (%)
-- **Status** (cooking/charging/idle)
+For each probe:
+- **Temperature** (°C)
+- **Ambient Temperature** (°C)
+- **Battery** (%)
+- **State** (cooking / charging / idle)
 
-For enheten:
-- **Enhetsbatteri** (%)
+For the device itself:
+- **Battery** (%)
 - **WiFi Signal** (dBm)
+
+## Notes
+
+- Data is routed via Typhur's cloud (AWS IoT). A local/Bluetooth connection is not currently supported.
+- Certificates are fetched automatically from the Typhur API and cached in `/data/`. They are valid for several years.
+- The token is cached in `/data/typhur_token.txt` and refreshed automatically when it expires.

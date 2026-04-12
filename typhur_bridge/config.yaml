@@ -1,6 +1,6 @@
 name: "Typhur Bridge"
-description: "Kobler Typhur Sync Quad termometer til Home Assistant via MQTT auto-discovery"
-version: "1.1.2"
+description: "Connects Typhur Sync Quad thermometer to Home Assistant via MQTT auto-discovery"
+version: "1.2.0"
 slug: "typhur_bridge"
 init: false
 arch:
@@ -10,17 +10,17 @@ arch:
   - armhf
   - i386
 options:
-  typhur_token: ""
   typhur_email: ""
   typhur_password: ""
+  typhur_token: ""
   mqtt_host: "core-mosquitto"
   mqtt_port: 1883
   mqtt_username: ""
   mqtt_password: ""
 schema:
-  typhur_token: str?
   typhur_email: str?
   typhur_password: str?
+  typhur_token: str?
   mqtt_host: str
   mqtt_port: int
   mqtt_username: str?
