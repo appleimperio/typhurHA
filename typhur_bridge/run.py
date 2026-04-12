@@ -27,6 +27,7 @@ DATA_DIR = "/data"
 CERT_FILE = os.path.join(DATA_DIR, "typhur_client.crt")
 KEY_FILE = os.path.join(DATA_DIR, "typhur_client.key")
 CLIENT_ID_FILE = os.path.join(DATA_DIR, "typhur_client_id.txt")
+TOKEN_FILE = os.path.join(DATA_DIR, "typhur_token.txt")
 
 TYPHUR_BROKER = "a2qg0p56us3mxs-ats.iot.eu-central-1.amazonaws.com"
 TYPHUR_PORT = 8883
@@ -59,6 +60,73 @@ def sign_request(token, body_str="{}"):
     h["x-sign"] = sign
     h["Content-Type"] = "application/json"
     return h
+
+
+def login(email, password):
+    """Logg inn med e-post og passord, returner token. Prøver MD5-hashet passord først."""
+    body = json.dumps({"account": email, "password": hashlib.md5(password.encode()).hexdigest()}, separators=(",", ":"))
+    resp = requests.post(
+        f"{TYPHUR_API}/app/user/login",
+        headers=sign_request("", body),
+        data=body,
+        timeout=15
+    )
+    data = resp.json()
+    if data.get("code") == "0":
+        token = data["data"]["token"]
+        log.info("Innlogging vellykket, token hentet.")
+        with open(TOKEN_FILE, "w") as f:
+            f.write(token)
+        os.chmod(TOKEN_FILE, 0o600)
+        return token
+
+    # Fallback: prøv med klartekst passord
+    log.warning(f"MD5-innlogging feilet ({data.get('msg')}), prøver klartekst...")
+    body2 = json.dumps({"account": email, "password": password}, separators=(",", ":"))
+    resp2 = requests.post(
+        f"{TYPHUR_API}/app/user/login",
+        headers=sign_request("", body2),
+        data=body2,
+        timeout=15
+    )
+    data2 = resp2.json()
+    if data2.get("code") == "0":
+        token = data2["data"]["token"]
+        log.info("Innlogging vellykket (klartekst), token hentet.")
+        with open(TOKEN_FILE, "w") as f:
+            f.write(token)
+        os.chmod(TOKEN_FILE, 0o600)
+        return token
+
+    raise Exception(f"Innlogging feilet: {data2.get('msg')} (kode: {data2.get('code')})")
+
+
+def resolve_token(options):
+    """Hent token fra config, cachet fil, eller logg inn med e-post/passord."""
+    # 1. Eksplisitt token i config
+    token = (options.get("typhur_token") or "").strip()
+    if token:
+        log.info("Bruker token fra konfigurasjon.")
+        return token
+
+    # 2. Cachet token fra forrige innlogging
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE) as f:
+            cached = f.read().strip()
+        if cached:
+            log.info("Bruker cachet token fra /data/typhur_token.txt")
+            return cached
+
+    # 3. Logg inn med e-post og passord
+    email = (options.get("typhur_email") or "").strip()
+    password = (options.get("typhur_password") or "").strip()
+    if email and password:
+        log.info(f"Logger inn som {email}...")
+        return login(email, password)
+
+    raise Exception(
+        "Ingen token funnet! Fyll inn enten 'typhur_token' eller 'typhur_email' + 'typhur_password' i konfigurasjonen."
+    )
 
 
 def fetch_and_save_certs(token):
@@ -226,7 +294,7 @@ def publish_discovery(ha_client, device):
 class TyphurBridge:
     def __init__(self, options):
         self.options = options
-        self.token = options["typhur_token"]
+        self.token = resolve_token(options)
         self.ha_client = None
         self.typhur_client = None
         self.devices = []
@@ -306,12 +374,21 @@ class TyphurBridge:
             else:
                 client_id = fetch_and_save_certs(self.token)
 
-        # Hent enheter
+        # Hent enheter (med automatisk token-refresh ved auth-feil)
         log.info("Henter enhetsliste...")
         self.devices = get_devices(self.token)
         if not self.devices:
-            log.error("Ingen enheter funnet! Sjekk typhur_token i config.")
-            raise SystemExit(1)
+            email = (self.options.get("typhur_email") or "").strip()
+            password = (self.options.get("typhur_password") or "").strip()
+            if email and password:
+                log.warning("Ingen enheter funnet — token kan ha utløpt. Prøver ny innlogging...")
+                if os.path.exists(TOKEN_FILE):
+                    os.unlink(TOKEN_FILE)
+                self.token = login(email, password)
+                self.devices = get_devices(self.token)
+            if not self.devices:
+                log.error("Ingen enheter funnet! Sjekk brukernavn/passord eller typhur_token.")
+                raise SystemExit(1)
         log.info(f"Fant {len(self.devices)} enhet(er)")
 
         self.setup_ha_mqtt()
