@@ -51,8 +51,11 @@ def sign_request(token, body_str="{}"):
         ("x-appId", APP_ID), ("x-appVersion", APP_VERSION),
         ("x-deviceSn", APP_DEVICE_SN), ("x-lang", "en_US"),
         ("x-nonce", nonce), ("x-region", "NO"),
-        ("x-timestamp", timestamp), ("x-token", token),
+        ("x-timestamp", timestamp),
     ]
+    # x-token inkluderes kun når den faktisk finnes
+    if token:
+        headers_sorted.append(("x-token", token))
     parts = ";".join(f"{k}={v}" for k, v in headers_sorted)
     sign_str = f"{APP_KEY}|{parts}|{body_str}"
     sign = hashlib.md5(sign_str.encode()).hexdigest()
