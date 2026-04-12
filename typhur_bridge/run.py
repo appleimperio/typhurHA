@@ -29,9 +29,10 @@ KEY_FILE = os.path.join(DATA_DIR, "typhur_client.key")
 CLIENT_ID_FILE = os.path.join(DATA_DIR, "typhur_client_id.txt")
 TOKEN_FILE = os.path.join(DATA_DIR, "typhur_token.txt")
 
-TYPHUR_BROKER = "a2qg0p56us3mxs-ats.iot.eu-central-1.amazonaws.com"
-TYPHUR_PORT = 8883
-TYPHUR_API = "https://api.iot.typhur.de"
+TYPHUR_API_BY_REGION = {
+    "eu": "https://api.iot.typhur.de",
+    "us": "https://api.iot.typhur.com",
+}
 # Public signing constant extracted from the Typhur APK — not a secret
 TYPHUR_SIGN_CONSTANT = "7d02d81bd7f4483a9a0ac580f2b6ad44"
 APP_ID = "ap206cba3069ed4a11"
@@ -206,6 +207,28 @@ def fetch_and_save_certs(token):
     return client_id
 
 
+def fetch_mqtt_params(token):
+    """Fetch MQTT broker parameters from the Typhur API dict/list endpoint."""
+    log.info("Fetching MQTT connection parameters from Typhur API...")
+    resp = requests.post(
+        f"{TYPHUR_API}/app/dict/list",
+        headers=sign_request(token, "{}"),
+        data="{}",
+        timeout=15
+    )
+    data = resp.json()
+    if data.get("code") != "0":
+        raise Exception(f"dict/list failed: {data.get('msg')}")
+    for entry in data.get("data", []):
+        if entry.get("dictKey") == "mqtt_conn_param":
+            params = entry["dictValue"]
+            endpoint = params["endpoint"]
+            port = int(params.get("port", 8883))
+            log.info(f"MQTT broker: {endpoint}:{port}")
+            return endpoint, port
+    raise Exception("mqtt_conn_param not found in dict/list response")
+
+
 def get_devices(token):
     resp = requests.post(
         f"{TYPHUR_API}/app/device/bind/list",
@@ -324,6 +347,10 @@ def publish_discovery(ha_client, device):
 class TyphurBridge:
     def __init__(self, options):
         self.options = options
+        region = (options.get("typhur_region") or "eu").strip().lower()
+        global TYPHUR_API
+        TYPHUR_API = TYPHUR_API_BY_REGION.get(region, TYPHUR_API_BY_REGION["eu"])
+        log.info(f"Typhur API region: {region} → {TYPHUR_API}")
         self.token = resolve_token(options)
         self.ha_client = None
         self.typhur_client = None
@@ -340,7 +367,7 @@ class TyphurBridge:
         self.ha_client.loop_start()
         log.info(f"Connected to HA MQTT: {self.options['mqtt_host']}:{self.options['mqtt_port']}")
 
-    def setup_typhur_mqtt(self, client_id):
+    def setup_typhur_mqtt(self, client_id, broker, port):
         def on_connect(client, userdata, flags, rc, properties=None):
             if rc == 0:
                 for dev in self.devices:
@@ -386,7 +413,7 @@ class TyphurBridge:
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.load_cert_chain(CERT_FILE, KEY_FILE)
         self.typhur_client.tls_set_context(ssl_ctx)
-        self.typhur_client.connect(TYPHUR_BROKER, TYPHUR_PORT, 60)
+        self.typhur_client.connect(broker, port, 60)
         self.typhur_client.loop_start()
         log.info("Connected to Typhur cloud MQTT")
 
@@ -410,8 +437,9 @@ class TyphurBridge:
             raise SystemExit(1)
         log.info(f"Found {len(self.devices)} device(s)")
 
+        broker, port = fetch_mqtt_params(self.token)
         self.setup_ha_mqtt()
-        self.setup_typhur_mqtt(client_id)
+        self.setup_typhur_mqtt(client_id, broker, port)
 
         time.sleep(2)
         for dev in self.devices:
