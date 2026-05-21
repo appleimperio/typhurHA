@@ -35,6 +35,7 @@ TYPHUR_API_BY_REGION = {
 }
 # Public signing constant extracted from the Typhur APK — not a secret
 TYPHUR_SIGN_CONSTANT = "7d02d81bd7f4483a9a0ac580f2b6ad44"
+TYPHUR_REGION = "EU"
 APP_ID = "ap206cba3069ed4a11"
 APP_VERSION = "4200"
 APP_DEVICE_SN = hashlib.md5(b"ha_typhur_bridge_v1").hexdigest()
@@ -46,14 +47,14 @@ def load_options():
         return json.load(f)
 
 
-def sign_request(token, body_str="{}"):
+def sign_request(token, body_str="{}", region="eu"):
     nonce = uuid.uuid4().hex
     timestamp = str(int(time.time() * 1000))
     # x-token is always included in the signature string (even as empty/none)
     headers_sorted = [
         ("x-appId", APP_ID), ("x-appVersion", APP_VERSION),
         ("x-deviceSn", APP_DEVICE_SN), ("x-lang", "en_US"),
-        ("x-nonce", nonce), ("x-region", "NO"),
+        ("x-nonce", nonce), ("x-region", region.upper()),
         ("x-timestamp", timestamp), ("x-token", token),
     ]
     parts = ";".join(f"{k}={v}" for k, v in headers_sorted)
@@ -348,7 +349,8 @@ class TyphurBridge:
     def __init__(self, options):
         self.options = options
         region = (options.get("typhur_region") or "eu").strip().lower()
-        global TYPHUR_API
+        global TYPHUR_API, TYPHUR_REGION
+        TYPHUR_REGION = region.upper()
         TYPHUR_API = TYPHUR_API_BY_REGION.get(region, TYPHUR_API_BY_REGION["eu"])
         log.info(f"Typhur API region: {region} → {TYPHUR_API}")
         self.token = resolve_token(options)
