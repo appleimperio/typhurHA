@@ -43,6 +43,7 @@ HA_DISCOVERY_PREFIX = "homeassistant"
 MODEL_PROBE_COUNT = {
     "WT08": 4,   # Sync Quad
     "WT01": 1,   # Sync One
+    "AF04": 0,   # Typhur Dome 2 - air fryer, different sensors
 }
 
 
@@ -247,24 +248,10 @@ def get_devices(token, region="EU"):
     return []
 
 
-def publish_discovery(ha_client, device):
-    device_id = str(device["deviceId"])
-    device_name = device.get("deviceName", "Typhur Sync Quad")
-    device_model = device.get("deviceModel", "WT08")
-    state_topic = f"typhur/{device_id}/state"
-
-    device_info = {
-        "identifiers": [f"typhur_{device_id}"],
-        "name": device_name,
-        "manufacturer": "Typhur",
-        "model": device_model,
-    }
-
-    probes = (device.get("lastStatusCmd") or {}).get("cmdData", {}).get("probes", [])
-    if not probes:
-       probe_count = MODEL_PROBE_COUNT.get(device_model, 4)
-       probes = [{"probeColor": f"probe{i}"} for i in range(1, probe_count + 1)]
-
+def build_probe_sensors(device_id, device_name, device_model):
+    """Build sensor list for probe-based thermometer devices (WT01, WT08, etc.)"""
+    probe_count = MODEL_PROBE_COUNT.get(device_model, 4)
+    probes = [{"probeColor": f"probe{i}"} for i in range(1, probe_count + 1)]
     sensors = []
 
     for probe in probes:
@@ -324,6 +311,107 @@ def publish_discovery(ha_client, device):
             "value_template": "{{ value_json.cmdData.wifiRssi }}",
         },
     ]
+    return sensors, []
+
+
+def build_dome_sensors(device_id, device_name):
+    """Build sensor list for Typhur Dome 2 air fryer (AF04)."""
+    sensors = [
+        {
+            "uid": f"typhur_{device_id}_status",
+            "name": f"{device_name} Status",
+            "unit": None,
+            "device_class": None,
+            "state_class": None,
+            "value_template": "{{ value_json.cmdData.globalStatus }}",
+        },
+        {
+            "uid": f"typhur_{device_id}_cur_temp",
+            "name": f"{device_name} Current Temperature",
+            "unit": "°C",
+            "device_class": "temperature",
+            "state_class": "measurement",
+            "value_template": "{{ (value_json.cmdData.curTemperature | float / 10) | round(1) }}",
+        },
+        {
+            "uid": f"typhur_{device_id}_cur_down_temp",
+            "name": f"{device_name} Bottom Temperature",
+            "unit": "°C",
+            "device_class": "temperature",
+            "state_class": "measurement",
+            "value_template": "{{ (value_json.cmdData.curDownTemperature | float / 10) | round(1) }}",
+        },
+        {
+            "uid": f"typhur_{device_id}_set_temp",
+            "name": f"{device_name} Target Temperature",
+            "unit": "°C",
+            "device_class": "temperature",
+            "state_class": "measurement",
+            "value_template": "{{ (value_json.cmdData.setParams[0].setTemperature | float / 10) | round(1) }}",
+        },
+        {
+            "uid": f"typhur_{device_id}_remaining_time",
+            "name": f"{device_name} Remaining Time",
+            "unit": "s",
+            "device_class": "duration",
+            "state_class": "measurement",
+            "value_template": "{{ value_json.cmdData.curRemainingTime }}",
+        },
+        {
+            "uid": f"typhur_{device_id}_cooking_state",
+            "name": f"{device_name} Cooking State",
+            "unit": None,
+            "device_class": None,
+            "state_class": None,
+            "value_template": "{{ value_json.cmdData.cookingState }}",
+        },
+        {
+            "uid": f"typhur_{device_id}_fan_speed",
+            "name": f"{device_name} Fan Speed",
+            "unit": None,
+            "device_class": None,
+            "state_class": "measurement",
+            "value_template": "{{ value_json.cmdData.curFanSpeed }}",
+        },
+        {
+            "uid": f"typhur_{device_id}_error",
+            "name": f"{device_name} Error Code",
+            "unit": None,
+            "device_class": None,
+            "state_class": None,
+            "value_template": "{{ value_json.cmdData.errorCode }}",
+        },
+    ]
+
+    binary_sensors = [
+        {
+            "uid": f"typhur_{device_id}_basket",
+            "name": f"{device_name} Basket",
+            "device_class": "door",
+            "value_template": "{{ 'ON' if value_json.cmdData.curBasketState == 1 else 'OFF' }}",
+        },
+    ]
+
+    return sensors, binary_sensors
+
+
+def publish_discovery(ha_client, device):
+    device_id = str(device["deviceId"])
+    device_name = device.get("deviceName", "Typhur Device")
+    device_model = device.get("deviceModel", "WT08")
+    state_topic = f"typhur/{device_id}/state"
+
+    device_info = {
+        "identifiers": [f"typhur_{device_id}"],
+        "name": device_name,
+        "manufacturer": "Typhur",
+        "model": device_model,
+    }
+
+    if device_model == "AF04":
+        sensors, binary_sensors = build_dome_sensors(device_id, device_name)
+    else:
+        sensors, binary_sensors = build_probe_sensors(device_id, device_name, device_model)
 
     for s in sensors:
         payload = {
@@ -339,14 +427,29 @@ def publish_discovery(ha_client, device):
             payload["device_class"] = s["device_class"]
         if s.get("state_class"):
             payload["state_class"] = s["state_class"]
-
         ha_client.publish(
             f"{HA_DISCOVERY_PREFIX}/sensor/{s['uid']}/config",
             json.dumps(payload),
             retain=True
         )
 
-    log.info(f"Discovery published for {device_name} ({len(sensors)} sensors)")
+    for s in binary_sensors:
+        payload = {
+            "name": s["name"],
+            "unique_id": s["uid"],
+            "state_topic": state_topic,
+            "value_template": s["value_template"],
+            "device": device_info,
+        }
+        if s.get("device_class"):
+            payload["device_class"] = s["device_class"]
+        ha_client.publish(
+            f"{HA_DISCOVERY_PREFIX}/binary_sensor/{s['uid']}/config",
+            json.dumps(payload),
+            retain=True
+        )
+
+    log.info(f"Discovery published for {device_name} ({len(sensors) + len(binary_sensors)} entities)")
     return state_topic
 
 
@@ -426,6 +529,7 @@ class TyphurBridge:
         log.info("Connected to Typhur cloud MQTT")
 
     def run(self):
+        global TYPHUR_REGION
         log.info("=== Typhur Bridge starting ===")
 
         if not (os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)):
