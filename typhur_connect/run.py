@@ -389,6 +389,7 @@ class TyphurBridge:
         def on_message(client, userdata, msg):
             try:
                 data = json.loads(msg.payload.decode())
+                log.info(f"Raw MQTT message from {msg.topic}: {json.dumps(data, indent=2)}")
                 if "status:report" not in data.get("cmdType", ""):
                     return
                 for dev in self.devices:
