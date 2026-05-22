@@ -339,7 +339,7 @@ def build_dome_sensors(device_id, device_name):
             "unit": "°C",
             "device_class": "temperature",
             "state_class": "measurement",
-            "value_template": "{{ (value_json.cmdData.curTemperature | float / 10) | round(1) }}",
+            "value_template": "{{ ((value_json.cmdData.curTemperature | float / 10 - 32) * 5 / 9) | round(1) }}",
         },
         {
             "uid": f"typhur_{device_id}_cur_down_temp",
@@ -347,7 +347,7 @@ def build_dome_sensors(device_id, device_name):
             "unit": "°C",
             "device_class": "temperature",
             "state_class": "measurement",
-            "value_template": "{{ (value_json.cmdData.curDownTemperature | float / 10) | round(1) }}",
+            "value_template": "{{ ((value_json.cmdData.curDownTemperature | float / 10 - 32) * 5 / 9) | round(1) }}",
         },
         {
             "uid": f"typhur_{device_id}_set_temp",
@@ -355,12 +355,12 @@ def build_dome_sensors(device_id, device_name):
             "unit": "°C",
             "device_class": "temperature",
             "state_class": "measurement",
-            "value_template": "{{ (value_json.cmdData.setParams[0].setTemperature | float / 10) | round(1) }}",
+            "value_template": "{{ ((value_json.cmdData.setParams[0].setTemperature | float / 10 - 32) * 5 / 9) | round(1) }}",
         },
         {
             "uid": f"typhur_{device_id}_preheat_time",
             "name": f"{device_name} Preheat Time",
-            "unit": "m",
+            "unit": "s",
             "device_class": "duration",
             "state_class": "measurement",
             "value_template": "{{ value_json.cmdData.curPreheatTime }}",
@@ -368,7 +368,7 @@ def build_dome_sensors(device_id, device_name):
         {
             "uid": f"typhur_{device_id}_preheat_remaining_time",
             "name": f"{device_name} Preheat Remaining Time",
-            "unit": "m",
+            "unit": "s",
             "device_class": "duration",
             "state_class": "measurement",
             "value_template": "{{ value_json.cmdData.curPreheatRemainingTime }}",
