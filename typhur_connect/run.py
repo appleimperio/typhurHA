@@ -67,7 +67,7 @@ def sign_request(token, body_str="{}", region="eu"):
     return h
 
 
-def login(email, password):
+def login(email, password, region="EU"):
     """
     Log in with email and MD5-hashed password.
     Endpoint: /app/account/login
@@ -78,7 +78,7 @@ def login(email, password):
         {"accountName": email, "accountPassword": md5_pw, "deviceInfo": "HomeAssistant"},
         separators=(",", ":")
     )
-    hdrs = sign_request("none", body)
+    hdrs = sign_request("none", body, region)
     log.info(f"Logging in as {email}...")
     resp = requests.post(f"{TYPHUR_API}/app/account/login", headers=hdrs, data=body, timeout=15)
     log.debug(f"Login response {resp.status_code}: {resp.text}")
@@ -93,12 +93,12 @@ def login(email, password):
     raise Exception(f"Login failed: {data.get('msg')} (code: {data.get('code')})")
 
 
-def refresh_token(email, password, old_token):
+def refresh_token(email, password, old_token, region="EU"):
     """Refresh an expired token — same endpoint as regular login."""
-    return login(email, password)
+    return login(email, password, region)
 
 
-def resolve_token(options):
+def resolve_token(options, region="EU"):
     """
     Resolve the API token from config, cached file, or by logging in with email/password.
     Priority:
@@ -118,22 +118,22 @@ def resolve_token(options):
             log.info("Using cached token from /data/typhur_token.txt")
 
     if token:
-        token = verify_or_refresh_token(token, email, password)
+        token = verify_or_refresh_token(token, email, password, region)
         return token
 
     if email and password:
-        return login(email, password)
+        return login(email, password, region)
 
     raise Exception(
         "No token found. Set 'typhur_email' + 'typhur_password', or provide 'typhur_token' directly."
     )
 
 
-def verify_or_refresh_token(token, email, password):
+def verify_or_refresh_token(token, email, password, region="EU"):
     """Verify token against the API; refresh automatically if expired."""
     resp = requests.post(
         f"{TYPHUR_API}/app/device/bind/list",
-        headers=sign_request(token, "{}"),
+        headers=sign_request(token, "{}", region),
         data="{}",
         timeout=10
     )
@@ -148,7 +148,7 @@ def verify_or_refresh_token(token, email, password):
         log.warning("Token has expired.")
         if email and password:
             log.info(f"Refreshing token automatically for {email}...")
-            new_token = refresh_token(email, password, token)
+            new_token = refresh_token(email, password, token, region)
             if new_token:
                 return new_token
             raise Exception("Automatic token refresh failed. Update typhur_token manually.")
@@ -161,12 +161,12 @@ def verify_or_refresh_token(token, email, password):
     return token
 
 
-def fetch_and_save_certs(token):
+def fetch_and_save_certs(token, region="EU"):
     """Fetch MQTT client certificates from the Typhur API and save to /data/."""
     log.info("Fetching MQTT certificates from Typhur API...")
     resp = requests.post(
         f"{TYPHUR_API}/app/mqtt/cert/apply",
-        headers=sign_request(token, "{}"),
+        headers=sign_request(token, "{}", region),
         data="{}",
         timeout=15
     )
@@ -208,12 +208,12 @@ def fetch_and_save_certs(token):
     return client_id
 
 
-def fetch_mqtt_params(token):
+def fetch_mqtt_params(token, region="EU"):
     """Fetch MQTT broker parameters from the Typhur API dict/list endpoint."""
     log.info("Fetching MQTT connection parameters from Typhur API...")
     resp = requests.post(
         f"{TYPHUR_API}/app/dict/list",
-        headers=sign_request(token, "{}"),
+        headers=sign_request(token, "{}", region),
         data="{}",
         timeout=15
     )
@@ -230,10 +230,10 @@ def fetch_mqtt_params(token):
     raise Exception("mqtt_conn_param not found in dict/list response")
 
 
-def get_devices(token):
+def get_devices(token, region="EU"):
     resp = requests.post(
         f"{TYPHUR_API}/app/device/bind/list",
-        headers=sign_request(token, "{}"),
+        headers=sign_request(token, "{}", region),
         data="{}",
         timeout=10
     )
@@ -353,7 +353,7 @@ class TyphurBridge:
         TYPHUR_REGION = region.upper()
         TYPHUR_API = TYPHUR_API_BY_REGION.get(region, TYPHUR_API_BY_REGION["eu"])
         log.info(f"Typhur API region: {region} → {TYPHUR_API}")
-        self.token = resolve_token(options)
+        self.token = resolve_token(options, region.upper())
         self.ha_client = None
         self.typhur_client = None
         self.devices = []
@@ -423,23 +423,23 @@ class TyphurBridge:
         log.info("=== Typhur Bridge starting ===")
 
         if not (os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)):
-            client_id = fetch_and_save_certs(self.token)
+            client_id = fetch_and_save_certs(self.token, typhur_region)
         else:
             log.info("Using cached certificates")
             if os.path.exists(CLIENT_ID_FILE):
                 with open(CLIENT_ID_FILE) as f:
                     client_id = f.read().strip()
             else:
-                client_id = fetch_and_save_certs(self.token)
+                client_id = fetch_and_save_certs(self.token, typhur_region)
 
         log.info("Fetching device list...")
-        self.devices = get_devices(self.token)
+        self.devices = get_devices(self.token, typhur_region)
         if not self.devices:
             log.error("No devices found. Check your credentials or token.")
             raise SystemExit(1)
         log.info(f"Found {len(self.devices)} device(s)")
 
-        broker, port = fetch_mqtt_params(self.token)
+        broker, port = fetch_mqtt_params(self.token, typhur_region)
         self.setup_ha_mqtt()
         self.setup_typhur_mqtt(client_id, broker, port)
 
