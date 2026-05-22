@@ -1,4 +1,4 @@
-# Typhur Bridge
+# Typhur Connect
 
 Home Assistant app that connects your **Typhur Sync Quad** thermometer directly to Home Assistant using MQTT auto-discovery. No phone or extra tools required — just your Typhur account credentials.
 
@@ -31,6 +31,12 @@ Typhur probe  →  Typhur cloud (AWS IoT)  →  Typhur Bridge  →  Local MQTT  
 | `mqtt_password` | MQTT password (if required) | No |
 
 **Recommended:** Fill in `typhur_email` and `typhur_password`. The app will log in automatically, cache the token locally, and renew it when it expires — no manual intervention needed.
+
+## Supported devices
+
+- **Typhur Dome 2** (AF04)
+- **Typhur Sync One** (WT01)
+- **Ambient Temperature** (°C)
 
 ## Sensors created per device
 
