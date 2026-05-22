@@ -1,6 +1,6 @@
 name: "Typhur Connect"
 description: "Connects Typhur Sync Quad thermometer to Home Assistant via MQTT auto-discovery using your Typhur account credentials"
-version: "1.4.1"
+version: "1.4.2"
 slug: "typhur_connect"
 init: false
 arch:
