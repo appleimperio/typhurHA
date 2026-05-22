@@ -326,6 +326,14 @@ def build_dome_sensors(device_id, device_name):
             "value_template": "{{ value_json.cmdData.globalStatus }}",
         },
         {
+            "uid": f"typhur_{device_id}_start_client",
+            "name": f"{device_name} Start Client",
+            "unit": None,
+            "device_class": None,
+            "state_class": None,
+            "value_template": "{{ value_json.cmdData.startClient }}",
+        },        
+        {
             "uid": f"typhur_{device_id}_cur_temp",
             "name": f"{device_name} Current Temperature",
             "unit": "°C",
@@ -349,6 +357,22 @@ def build_dome_sensors(device_id, device_name):
             "state_class": "measurement",
             "value_template": "{{ (value_json.cmdData.setParams[0].setTemperature | float / 10) | round(1) }}",
         },
+        {
+            "uid": f"typhur_{device_id}_preheat_time",
+            "name": f"{device_name} Preheat Time",
+            "unit": "m",
+            "device_class": "duration",
+            "state_class": "measurement",
+            "value_template": "{{ value_json.cmdData.curPreheatTime }}",
+        },
+        {
+            "uid": f"typhur_{device_id}_preheat_remaining_time",
+            "name": f"{device_name} Preheat Remaining Time",
+            "unit": "m",
+            "device_class": "duration",
+            "state_class": "measurement",
+            "value_template": "{{ value_json.cmdData.curPreheatRemainingTime }}",
+        },        
         {
             "uid": f"typhur_{device_id}_remaining_time",
             "name": f"{device_name} Remaining Time",
