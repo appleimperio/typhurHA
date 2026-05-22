@@ -332,7 +332,19 @@ def build_dome_sensors(device_id, device_name):
             "device_class": None,
             "state_class": None,
             "value_template": "{{ value_json.cmdData.startClient }}",
-        },        
+        },
+        {
+            "uid": f"typhur_{device_id}_cooking_mode",
+            "name": f"{device_name} Cooking Mode",
+            "unit": None,
+            "device_class": None,
+            "state_class": None,
+            "value_template": (
+                "{% set modes = {1: 'Air Fry', 5: 'Pizza', 7: 'Steak'} %}"
+                "{{ modes.get(value_json.cmdData.setParams[0].cookingMode | int, "
+                "'Mode ' ~ value_json.cmdData.setParams[0].cookingMode) }}"
+            ),
+        },
         {
             "uid": f"typhur_{device_id}_cur_temp",
             "name": f"{device_name} Current Temperature",
