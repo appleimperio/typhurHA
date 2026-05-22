@@ -36,7 +36,7 @@ Typhur probe  →  Typhur cloud (AWS IoT)  →  Typhur Bridge  →  Local MQTT  
 
 - **Typhur Dome 2** (AF04)
 - **Typhur Sync One** (WT01)
-- **Ambient Temperature** (°C)
+- **Typhur Sync Wireless Meat Thermometer Quad** (WT08)
 
 ## Sensors created per device
 
