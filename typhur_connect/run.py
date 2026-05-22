@@ -423,23 +423,23 @@ class TyphurBridge:
         log.info("=== Typhur Bridge starting ===")
 
         if not (os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)):
-            client_id = fetch_and_save_certs(self.token, typhur_region)
+            client_id = fetch_and_save_certs(self.token, TYPHUR_REGION)
         else:
             log.info("Using cached certificates")
             if os.path.exists(CLIENT_ID_FILE):
                 with open(CLIENT_ID_FILE) as f:
                     client_id = f.read().strip()
             else:
-                client_id = fetch_and_save_certs(self.token, typhur_region)
+                client_id = fetch_and_save_certs(self.token, TYPHUR_REGION)
 
         log.info("Fetching device list...")
-        self.devices = get_devices(self.token, typhur_region)
+        self.devices = get_devices(self.token, TYPHUR_REGION)
         if not self.devices:
             log.error("No devices found. Check your credentials or token.")
             raise SystemExit(1)
         log.info(f"Found {len(self.devices)} device(s)")
 
-        broker, port = fetch_mqtt_params(self.token, typhur_region)
+        broker, port = fetch_mqtt_params(self.token, TYPHUR_REGION)
         self.setup_ha_mqtt()
         self.setup_typhur_mqtt(client_id, broker, port)
 
