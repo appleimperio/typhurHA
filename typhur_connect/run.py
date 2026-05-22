@@ -40,6 +40,10 @@ APP_ID = "ap206cba3069ed4a11"
 APP_VERSION = "4200"
 APP_DEVICE_SN = hashlib.md5(b"ha_typhur_bridge_v1").hexdigest()
 HA_DISCOVERY_PREFIX = "homeassistant"
+MODEL_PROBE_COUNT = {
+    "WT08": 4,   # Sync Quad
+    "WT01": 1,   # Sync One
+}
 
 
 def load_options():
@@ -258,7 +262,8 @@ def publish_discovery(ha_client, device):
 
     probes = (device.get("lastStatusCmd") or {}).get("cmdData", {}).get("probes", [])
     if not probes:
-        probes = [{"probeColor": f"probe{i}"} for i in range(1, 5)]
+       probe_count = MODEL_PROBE_COUNT.get(device_model, 4)
+       probes = [{"probeColor": f"probe{i}"} for i in range(1, probe_count + 1)]
 
     sensors = []
 
